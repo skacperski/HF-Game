@@ -8,7 +8,8 @@
     "signaling": "node signaling-server.js",
     "dev": "npx concurrently \"npx http-server -p 8080 -c-1\" \"node signaling-server.js\"",
     "ssl": "npx local-ssl-proxy --source 8443 --target 8080",
-    "test-mobile": "npx concurrently \"npx http-server -p 8080 -c-1\" \"node signaling-server.js\" \"npx local-ssl-proxy --source 8443 --target 8080\""
+    "test-mobile": "npx concurrently \"npx http-server -p 8080 -c-1\" \"node signaling-server.js\" \"npx local-ssl-proxy --source 8443 --target 8080\"",
+    "tunnel": "bash tunnel.sh"
   },
   "dependencies": {
     "ws": "^8.0.0"

@@ -44,11 +44,17 @@ export function createCollab(game) {
 
     // ---- Initialize Yjs ----
     const ydoc = new Y.Doc();
+
     // Build signaling server list
     const signalingServers = [];
+    const params = new URLSearchParams(window.location.search);
+    const customSignal = params.get("signal");
 
-    // Local signaling server (start with: npx y-webrtc-signaling)
-    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    if (customSignal) {
+        // Custom signaling server passed via ?signal=wss://...
+        signalingServers.push(customSignal);
+    } else if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        // Local dev: use local signaling server
         signalingServers.push("ws://localhost:4444");
     }
 
