@@ -86,17 +86,21 @@ export function createCollab(game) {
     });
 
     // ---- Shared player sync (remote -> local) ----
-    let suppressRemoteApply = false;
+    // Instead of instant snap, we store a remote target and interpolate smoothly.
+    // Only the user who is ACTIVELY pressing keys writes to Y.Map (prevents echo-loop).
+    let remoteTarget = null;
+    let lastRemoteTime = 0;
 
     yPlayer.observe((event) => {
         if (event.transaction.local) return;
         if (mode !== "shared") return;
-        suppressRemoteApply = true;
-        game.player.x = yPlayer.get("x") ?? game.player.x;
-        game.player.y = yPlayer.get("y") ?? game.player.y;
-        game.player.direction = yPlayer.get("direction") ?? game.player.direction;
-        game.player.moving = yPlayer.get("moving") ?? false;
-        suppressRemoteApply = false;
+        lastRemoteTime = Date.now();
+        remoteTarget = {
+            x: yPlayer.get("x") ?? game.player.x,
+            y: yPlayer.get("y") ?? game.player.y,
+            direction: yPlayer.get("direction") ?? 0,
+            moving: yPlayer.get("moving") ?? false,
+        };
     });
 
     // ---- SVG map sync (remote -> local) ----
@@ -146,13 +150,25 @@ export function createCollab(game) {
     }
 
     let lastSyncTime = 0;
+    const SYNC_INTERVAL = 33; // ~30fps sync rate
+    const REMOTE_COOLDOWN = 150; // ms to wait after receiving remote before sending
+
     function syncPlayer() {
         if (mode !== "shared") return;
-        if (suppressRemoteApply) return;
 
+        // Only sync when the LOCAL user is actively providing input.
+        // This prevents echo: idle tab would otherwise echo back remote positions.
+        if (!game.hasLocalInput()) return;
+
+        // Cooldown: don't write back immediately after receiving remote data
         const now = Date.now();
-        if (now - lastSyncTime < 50) return;
+        if (now - lastRemoteTime < REMOTE_COOLDOWN) return;
+
+        if (now - lastSyncTime < SYNC_INTERVAL) return;
         lastSyncTime = now;
+
+        // Clear remote target since we're now the driver
+        remoteTarget = null;
 
         const p = game.player;
         ydoc.transact(() => {
@@ -161,6 +177,40 @@ export function createCollab(game) {
             yPlayer.set("direction", p.direction);
             yPlayer.set("moving", p.moving);
         });
+    }
+
+    // Smooth interpolation: called every frame from main.js render callback.
+    // When local user is idle, smoothly move player toward remote position.
+    function applyRemoteSmooth() {
+        if (mode !== "shared") return;
+        if (!remoteTarget) return;
+
+        // If local user is actively controlling, ignore remote target
+        if (game.hasLocalInput()) {
+            remoteTarget = null;
+            return;
+        }
+
+        const p = game.player;
+        const dx = remoteTarget.x - p.x;
+        const dy = remoteTarget.y - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 0.5) {
+            // Close enough, snap and clear
+            p.x = remoteTarget.x;
+            p.y = remoteTarget.y;
+            p.direction = remoteTarget.direction;
+            p.moving = remoteTarget.moving;
+            remoteTarget = null;
+        } else {
+            // Smooth lerp (0.25 per frame at 60fps = quick but smooth)
+            const lerp = Math.min(0.3, dist * 0.01 + 0.1);
+            p.x += dx * lerp;
+            p.y += dy * lerp;
+            p.direction = remoteTarget.direction;
+            p.moving = remoteTarget.moving;
+        }
     }
 
     function syncIndividualPawn() {
@@ -249,6 +299,7 @@ export function createCollab(game) {
         localUser,
         getUsers,
         syncPlayer,
+        applyRemoteSmooth,
         syncIndividualPawn,
         setCursor,
         shareSvg,

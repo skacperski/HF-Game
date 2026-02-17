@@ -109,7 +109,10 @@ game.parseSvgText = function (text) {
 
 // ---- Render callback: sync + draw remote elements ----
 game.addRenderCallback((ctx, cam) => {
-    // Sync local player to collab every frame
+    // Apply smooth interpolation from remote player data (must be BEFORE sync)
+    collab.applyRemoteSmooth();
+
+    // Sync local player to collab (only writes when local user has active input)
     collab.syncPlayer();
     collab.syncIndividualPawn();
 

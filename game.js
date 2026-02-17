@@ -1513,5 +1513,11 @@
         parseSvgText: parseSvg,
         getLastSvgText: () => lastSvgText,
         constrainToPath,
+        hasLocalInput: () => {
+            for (const k in keys) {
+                if (keys[k]) return true;
+            }
+            return clickTarget !== null;
+        },
     };
 })();
