@@ -297,6 +297,9 @@ export function createCollab(game) {
     return {
         roomId,
         localUser,
+        provider,
+        awareness,
+        ydoc,
         getUsers,
         syncPlayer,
         applyRemoteSmooth,

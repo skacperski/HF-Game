@@ -1,7 +1,8 @@
 // ============================================================
-// Hey Feelings - Main Orchestrator (Game + Co-browsing)
+// Hey Feelings - Main Orchestrator (Game + Co-browsing + Media)
 // ============================================================
 import { createCollab } from "./collab.js";
+import { createMedia } from "./media.js";
 
 const game = window.HFGame;
 
@@ -10,6 +11,9 @@ game.init();
 
 // ---- Initialize co-browsing ----
 const collab = createCollab(game);
+
+// ---- Initialize media (video + audio) ----
+const media = createMedia(collab.provider, collab.awareness, collab.ydoc.clientID);
 
 // ---- UI References ----
 const roomIdEl = document.getElementById("room-id");
@@ -205,5 +209,94 @@ game.addRenderCallback((ctx) => {
     ctx.arc(vp.w - 148, 171, 4, 0, Math.PI * 2);
     ctx.fill();
 });
+
+// ============================================================
+// Media: Video + Audio HUD
+// ============================================================
+
+const localVideoEl = document.getElementById("local-video");
+const remoteVideosEl = document.getElementById("remote-videos");
+const btnCam = document.getElementById("btn-toggle-cam");
+const btnMic = document.getElementById("btn-toggle-mic");
+const localVideoBox = document.getElementById("local-video-box");
+
+// Start media capture
+media.start().then((stream) => {
+    if (!stream) {
+        if (localVideoBox) localVideoBox.classList.add("no-video");
+        return;
+    }
+
+    // Show local video
+    if (localVideoEl) {
+        localVideoEl.srcObject = stream;
+    }
+
+    // Show local name
+    const localLabel = localVideoBox?.querySelector(".video-label");
+    if (localLabel) localLabel.textContent = collab.localUser.name;
+
+    // Check if we have video track
+    if (stream.getVideoTracks().length === 0) {
+        if (localVideoBox) localVideoBox.classList.add("no-video");
+        if (btnCam) btnCam.classList.add("hidden");
+    }
+});
+
+// Remote stream handling
+media.onStreamAdded = (peerId, stream) => {
+    if (!remoteVideosEl) return;
+
+    // Find user info from awareness
+    const users = collab.getUsers();
+    const user = users.find((u) => String(u.id) === String(peerId));
+    const name = user ? user.name : `Peer-${String(peerId).slice(-4)}`;
+    const color = user ? user.color : "#aaa";
+
+    // Create video box
+    const box = document.createElement("div");
+    box.className = "video-box";
+    box.id = `remote-video-${peerId}`;
+    box.style.borderColor = color + "80";
+
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+
+    const label = document.createElement("span");
+    label.className = "video-label";
+    label.textContent = name;
+    label.style.color = color;
+
+    box.appendChild(video);
+    box.appendChild(label);
+    remoteVideosEl.appendChild(box);
+};
+
+media.onStreamRemoved = (peerId) => {
+    const box = document.getElementById(`remote-video-${peerId}`);
+    if (box) box.remove();
+};
+
+// Camera toggle
+if (btnCam) {
+    btnCam.addEventListener("click", () => {
+        const enabled = media.toggleVideo();
+        btnCam.classList.toggle("active", enabled);
+        btnCam.classList.toggle("muted", !enabled);
+        btnCam.title = enabled ? "Turn off camera" : "Turn on camera";
+    });
+}
+
+// Mic toggle
+if (btnMic) {
+    btnMic.addEventListener("click", () => {
+        const enabled = media.toggleAudio();
+        btnMic.classList.toggle("active", enabled);
+        btnMic.classList.toggle("muted", !enabled);
+        btnMic.title = enabled ? "Mute microphone" : "Unmute microphone";
+    });
+}
 
 console.log(`%cCo-browsing%c Room: ${collab.roomId}`, "color:#81C784;font-weight:bold", "color:#ccc");
