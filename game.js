@@ -6,7 +6,7 @@
     "use strict";
 
     // ---- Constants ----
-    const BOARD_SCALE = 3; // Board is 3x3 viewports
+    const BOARD_SCALE = 3;
     const PLAYER_SPEED = 3.5;
     const NPC_COUNT = 25;
     const NPC_MIN_SPEED = 0.4;
@@ -16,6 +16,7 @@
     const ROCK_COUNT = 40;
     const HOUSE_COUNT = 12;
     const FLOWER_COUNT = 120;
+    const PATH_POINT_MARGIN = 2;
 
     // ---- Canvas Setup ----
     const canvas = document.getElementById("gameCanvas");
@@ -37,23 +38,23 @@
             minimapCanvas = document.createElement("canvas");
             minimapEl.appendChild(minimapCanvas);
         }
-        minimapCanvas.width = 120;
-        minimapCanvas.height = 120;
+        minimapCanvas.width = 140;
+        minimapCanvas.height = 140;
         minimapCanvas.style.width = "100%";
         minimapCanvas.style.height = "100%";
         minimapCanvas.style.borderRadius = "6px";
         minimapCtx = minimapCanvas.getContext("2d");
+
+        if (svgPaths.length > 0) {
+            rescaleSvgPaths();
+        }
     }
 
-    // ---- Seeded Random for Consistent World ----
+    // ---- Seeded Random ----
     let seed = 42;
     function seededRandom() {
         seed = (seed * 16807 + 0) % 2147483647;
         return (seed - 1) / 2147483646;
-    }
-
-    function randomRange(min, max, rng = Math.random) {
-        return min + rng() * (max - min);
     }
 
     // ---- Color Palette ----
@@ -62,6 +63,8 @@
         grassDark: "#3d6b34",
         pathLight: "#c4a96a",
         pathDark: "#b09858",
+        pathHighlight: "#d4c48a",
+        pathShadow: "#9a8848",
         water: "#3a7bd5",
         waterLight: "#5a9bf5",
         treeTrunk: "#6b4226",
@@ -75,13 +78,245 @@
         npcColors: ["#e74c3c", "#e67e22", "#f1c40f", "#1abc9c", "#9b59b6", "#e84393", "#00b894", "#fd79a8"],
     };
 
+    // ============================================================
+    // SVG PATH SYSTEM
+    // ============================================================
+    let svgPaths = [];          // Scaled to board: [{x, y, w, h, color}]
+    let svgPathsRaw = [];       // Original SVG coords: [{x, y, w, h, color}]
+    let svgViewBox = null;      // {w, h} of the SVG viewBox
+    let svgLoaded = false;
+
+    // Parse an SVG string and extract walkable rectangles
+    function parseSvg(svgText) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgText, "image/svg+xml");
+        const svgEl = doc.querySelector("svg");
+
+        if (!svgEl) {
+            console.error("Invalid SVG: no <svg> element found");
+            return false;
+        }
+
+        // Get viewBox or width/height
+        const vb = svgEl.getAttribute("viewBox");
+        let vbW, vbH;
+        if (vb) {
+            const parts = vb.split(/[\s,]+/).map(Number);
+            vbW = parts[2];
+            vbH = parts[3];
+        } else {
+            vbW = parseFloat(svgEl.getAttribute("width")) || 900;
+            vbH = parseFloat(svgEl.getAttribute("height")) || 600;
+        }
+        svgViewBox = { w: vbW, h: vbH };
+
+        // Extract all <rect> elements
+        const rects = doc.querySelectorAll("rect");
+        svgPathsRaw = [];
+
+        rects.forEach((rect) => {
+            const x = parseFloat(rect.getAttribute("x")) || 0;
+            const y = parseFloat(rect.getAttribute("y")) || 0;
+            const w = parseFloat(rect.getAttribute("width")) || 0;
+            const h = parseFloat(rect.getAttribute("height")) || 0;
+            const fill = rect.getAttribute("fill") || COLORS.pathLight;
+
+            if (w > 0 && h > 0) {
+                svgPathsRaw.push({ x, y, w, h, color: fill });
+            }
+        });
+
+        // Also extract <line> elements and convert to thin rects
+        const lines = doc.querySelectorAll("line");
+        lines.forEach((line) => {
+            const x1 = parseFloat(line.getAttribute("x1")) || 0;
+            const y1 = parseFloat(line.getAttribute("y1")) || 0;
+            const x2 = parseFloat(line.getAttribute("x2")) || 0;
+            const y2 = parseFloat(line.getAttribute("y2")) || 0;
+            const strokeWidth = parseFloat(line.getAttribute("stroke-width")) || 20;
+            const stroke = line.getAttribute("stroke") || COLORS.pathLight;
+            const half = strokeWidth / 2;
+
+            if (Math.abs(x2 - x1) >= Math.abs(y2 - y1)) {
+                // Mostly horizontal
+                const minX = Math.min(x1, x2);
+                const maxX = Math.max(x1, x2);
+                const midY = (y1 + y2) / 2;
+                svgPathsRaw.push({
+                    x: minX, y: midY - half,
+                    w: maxX - minX, h: strokeWidth,
+                    color: stroke,
+                });
+            } else {
+                // Mostly vertical
+                const minY = Math.min(y1, y2);
+                const maxY = Math.max(y1, y2);
+                const midX = (x1 + x2) / 2;
+                svgPathsRaw.push({
+                    x: midX - half, y: minY,
+                    w: strokeWidth, h: maxY - minY,
+                    color: stroke,
+                });
+            }
+        });
+
+        if (svgPathsRaw.length === 0) {
+            console.warn("SVG has no <rect> or <line> elements");
+            return false;
+        }
+
+        rescaleSvgPaths();
+        svgLoaded = true;
+
+        console.log(`SVG loaded: ${svgPathsRaw.length} path segments, viewBox ${vbW}x${vbH}`);
+        return true;
+    }
+
+    // Scale raw SVG coords to current board size
+    function rescaleSvgPaths() {
+        if (!svgViewBox || svgPathsRaw.length === 0) return;
+        const scaleX = boardW / svgViewBox.w;
+        const scaleY = boardH / svgViewBox.h;
+
+        svgPaths = svgPathsRaw.map((r) => ({
+            x: r.x * scaleX,
+            y: r.y * scaleY,
+            w: r.w * scaleX,
+            h: r.h * scaleY,
+            color: r.color,
+        }));
+    }
+
+    // Check if a point is on any SVG path rectangle
+    function isOnPath(px, py) {
+        if (!svgLoaded) return true;
+        for (const p of svgPaths) {
+            if (
+                px >= p.x - PATH_POINT_MARGIN &&
+                px <= p.x + p.w + PATH_POINT_MARGIN &&
+                py >= p.y - PATH_POINT_MARGIN &&
+                py <= p.y + p.h + PATH_POINT_MARGIN
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Constrain movement: try full move, then slide along axes
+    function constrainToPath(oldX, oldY, newX, newY) {
+        if (!svgLoaded) return { x: newX, y: newY };
+
+        if (isOnPath(newX, newY)) return { x: newX, y: newY };
+        if (isOnPath(newX, oldY)) return { x: newX, y: oldY };
+        if (isOnPath(oldX, newY)) return { x: oldX, y: newY };
+
+        return { x: oldX, y: oldY };
+    }
+
+    // Find a random point on a random path
+    function randomPointOnPath() {
+        if (!svgLoaded || svgPaths.length === 0) {
+            return { x: Math.random() * boardW, y: Math.random() * boardH };
+        }
+        const p = svgPaths[Math.floor(Math.random() * svgPaths.length)];
+        return {
+            x: p.x + Math.random() * p.w,
+            y: p.y + Math.random() * p.h,
+        };
+    }
+
+    // Find the nearest point on any path to a given position
+    function nearestPointOnPath(px, py) {
+        if (!svgLoaded || svgPaths.length === 0) return { x: px, y: py };
+
+        let bestDist = Infinity;
+        let bestX = px;
+        let bestY = py;
+
+        for (const p of svgPaths) {
+            const cx = Math.max(p.x, Math.min(p.x + p.w, px));
+            const cy = Math.max(p.y, Math.min(p.y + p.h, py));
+            const dx = px - cx;
+            const dy = py - cy;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestX = cx;
+                bestY = cy;
+            }
+        }
+
+        return { x: bestX, y: bestY };
+    }
+
+    // SVG file handling
+    function loadSvgFile(file) {
+        if (!file || !file.name.toLowerCase().endsWith(".svg")) {
+            console.warn("Please select an SVG file");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const success = parseSvg(e.target.result);
+            if (success) {
+                placePlayerOnPath();
+                placeNpcsOnPaths();
+                updateUploadUI(true, file.name);
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function clearSvgMap() {
+        svgPaths = [];
+        svgPathsRaw = [];
+        svgViewBox = null;
+        svgLoaded = false;
+        updateUploadUI(false);
+        console.log("SVG map cleared");
+    }
+
+    function updateUploadUI(loaded, filename) {
+        const btnLoad = document.getElementById("btn-load-svg");
+        const btnClear = document.getElementById("btn-clear-svg");
+        if (loaded) {
+            btnLoad.classList.add("hidden");
+            btnClear.classList.remove("hidden");
+            btnClear.querySelector("span").textContent = filename || "Clear Map";
+        } else {
+            btnLoad.classList.remove("hidden");
+            btnClear.classList.add("hidden");
+        }
+    }
+
+    function placePlayerOnPath() {
+        if (!svgLoaded) return;
+        // Find path rect closest to board center
+        const centerX = boardW / 2;
+        const centerY = boardH / 2;
+        const nearest = nearestPointOnPath(centerX, centerY);
+        player.x = nearest.x;
+        player.y = nearest.y;
+    }
+
+    function placeNpcsOnPaths() {
+        if (!svgLoaded) return;
+        for (const npc of npcs) {
+            const pt = randomPointOnPath();
+            npc.x = pt.x;
+            npc.y = pt.y;
+            pickNewTarget(npc);
+        }
+    }
+
     // ---- World Generation ----
     let tiles = [];
     let trees = [];
     let rocks = [];
     let houses = [];
     let flowers = [];
-    let paths = [];
+    let worldPaths = [];
 
     function generateWorld() {
         seed = 42;
@@ -97,8 +332,7 @@
             }
         }
 
-        // Generate winding paths
-        paths = [];
+        worldPaths = [];
         for (let i = 0; i < 5; i++) {
             const path = [];
             let px = seededRandom() * boardW;
@@ -111,10 +345,9 @@
                 px += Math.cos(angle + drift) * TILE_SIZE * 1.5;
                 py += Math.sin(angle + drift) * TILE_SIZE * 1.5;
             }
-            paths.push(path);
+            worldPaths.push(path);
         }
 
-        // Generate trees
         trees = [];
         for (let i = 0; i < TREE_COUNT; i++) {
             trees.push({
@@ -126,7 +359,6 @@
             });
         }
 
-        // Generate rocks
         rocks = [];
         for (let i = 0; i < ROCK_COUNT; i++) {
             rocks.push({
@@ -138,7 +370,6 @@
             });
         }
 
-        // Generate houses
         houses = [];
         for (let i = 0; i < HOUSE_COUNT; i++) {
             houses.push({
@@ -151,7 +382,6 @@
             });
         }
 
-        // Generate flowers
         flowers = [];
         for (let i = 0; i < FLOWER_COUNT; i++) {
             flowers.push({
@@ -169,7 +399,7 @@
         x: 0,
         y: 0,
         size: 18,
-        direction: 0, // 0=down, 1=left, 2=up, 3=right
+        direction: 0,
         animFrame: 0,
         animTimer: 0,
         moving: false,
@@ -186,9 +416,10 @@
     function createNPCs() {
         npcs = [];
         for (let i = 0; i < NPC_COUNT; i++) {
+            const pt = randomPointOnPath();
             const npc = {
-                x: Math.random() * boardW,
-                y: Math.random() * boardH,
+                x: pt.x,
+                y: pt.y,
                 size: 14 + Math.random() * 6,
                 speed: NPC_MIN_SPEED + Math.random() * (NPC_MAX_SPEED - NPC_MIN_SPEED),
                 color: COLORS.npcColors[Math.floor(Math.random() * COLORS.npcColors.length)],
@@ -198,8 +429,8 @@
                 waitTimer: 0,
                 animFrame: 0,
                 animTimer: 0,
-                state: "walking", // walking, waiting
-                name: `NPC-${i + 1}`,
+                state: "walking",
+                stuckCounter: 0,
             };
             pickNewTarget(npc);
             npcs.push(npc);
@@ -207,10 +438,18 @@
     }
 
     function pickNewTarget(npc) {
-        const range = 200 + Math.random() * 400;
-        const angle = Math.random() * Math.PI * 2;
-        npc.targetX = Math.max(40, Math.min(boardW - 40, npc.x + Math.cos(angle) * range));
-        npc.targetY = Math.max(40, Math.min(boardH - 40, npc.y + Math.sin(angle) * range));
+        if (svgLoaded) {
+            // Pick a random point on a path
+            const pt = randomPointOnPath();
+            npc.targetX = pt.x;
+            npc.targetY = pt.y;
+        } else {
+            const range = 200 + Math.random() * 400;
+            const angle = Math.random() * Math.PI * 2;
+            npc.targetX = Math.max(40, Math.min(boardW - 40, npc.x + Math.cos(angle) * range));
+            npc.targetY = Math.max(40, Math.min(boardH - 40, npc.y + Math.sin(angle) * range));
+        }
+        npc.stuckCounter = 0;
     }
 
     // ---- Input Handling ----
@@ -261,6 +500,51 @@
         }
     }
 
+    // ---- SVG File Upload Events ----
+    document.getElementById("btn-load-svg").addEventListener("click", () => {
+        document.getElementById("svg-file-input").click();
+    });
+
+    document.getElementById("btn-clear-svg").addEventListener("click", () => {
+        clearSvgMap();
+    });
+
+    document.getElementById("svg-file-input").addEventListener("change", (e) => {
+        if (e.target.files.length > 0) {
+            loadSvgFile(e.target.files[0]);
+        }
+        e.target.value = "";
+    });
+
+    // Drag and drop
+    let dragCounter = 0;
+    const dropOverlay = document.getElementById("drop-overlay");
+
+    document.addEventListener("dragenter", (e) => {
+        e.preventDefault();
+        dragCounter++;
+        if (dragCounter === 1) dropOverlay.classList.remove("hidden");
+    });
+
+    document.addEventListener("dragleave", (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter === 0) dropOverlay.classList.add("hidden");
+    });
+
+    document.addEventListener("dragover", (e) => {
+        e.preventDefault();
+    });
+
+    document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        dropOverlay.classList.add("hidden");
+        if (e.dataTransfer.files.length > 0) {
+            loadSvgFile(e.dataTransfer.files[0]);
+        }
+    });
+
     // ---- Update Logic ----
     function updatePlayer(dt) {
         let dx = 0;
@@ -271,7 +555,6 @@
         if (keys["a"] || keys["arrowleft"]) dx -= 1;
         if (keys["d"] || keys["arrowright"]) dx += 1;
 
-        // Click-to-move
         if (clickTarget) {
             const cdx = clickTarget.x - player.x;
             const cdy = clickTarget.y - player.y;
@@ -284,14 +567,12 @@
             }
         }
 
-        // Normalize diagonal movement
         const len = Math.sqrt(dx * dx + dy * dy);
         if (len > 0) {
             dx = (dx / len) * PLAYER_SPEED;
             dy = (dy / len) * PLAYER_SPEED;
             player.moving = true;
 
-            // Determine direction for animation
             if (Math.abs(dx) > Math.abs(dy)) {
                 player.direction = dx > 0 ? 3 : 1;
             } else {
@@ -301,10 +582,25 @@
             player.moving = false;
         }
 
-        player.x = Math.max(player.size, Math.min(boardW - player.size, player.x + dx));
-        player.y = Math.max(player.size, Math.min(boardH - player.size, player.y + dy));
+        // Compute desired new position
+        let newX = Math.max(player.size, Math.min(boardW - player.size, player.x + dx));
+        let newY = Math.max(player.size, Math.min(boardH - player.size, player.y + dy));
 
-        // Animation
+        // Constrain to SVG paths
+        const constrained = constrainToPath(player.x, player.y, newX, newY);
+        player.x = constrained.x;
+        player.y = constrained.y;
+
+        // If couldn't move at all, stop click target
+        if (constrained.x === player.x && constrained.y === player.y && clickTarget) {
+            // Actually check if we truly didn't move
+            if (Math.abs(newX - constrained.x) > 0.1 || Math.abs(newY - constrained.y) > 0.1) {
+                // Stuck on path - cancel click target
+                clickTarget = null;
+                player.moving = false;
+            }
+        }
+
         if (player.moving) {
             player.animTimer += dt;
             if (player.animTimer > 150) {
@@ -329,9 +625,9 @@
                 continue;
             }
 
-            const dx = npc.targetX - npc.x;
-            const dy = npc.targetY - npc.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+            const tdx = npc.targetX - npc.x;
+            const tdy = npc.targetY - npc.y;
+            const dist = Math.sqrt(tdx * tdx + tdy * tdy);
 
             if (dist < 5) {
                 npc.state = "waiting";
@@ -339,24 +635,33 @@
                 continue;
             }
 
-            const mx = (dx / dist) * npc.speed;
-            const my = (dy / dist) * npc.speed;
+            const mx = (tdx / dist) * npc.speed;
+            const my = (tdy / dist) * npc.speed;
 
-            npc.x += mx;
-            npc.y += my;
+            let newX = Math.max(20, Math.min(boardW - 20, npc.x + mx));
+            let newY = Math.max(20, Math.min(boardH - 20, npc.y + my));
 
-            // Clamp to board
-            npc.x = Math.max(20, Math.min(boardW - 20, npc.x));
-            npc.y = Math.max(20, Math.min(boardH - 20, npc.y));
+            // Constrain NPC to paths
+            const constrained = constrainToPath(npc.x, npc.y, newX, newY);
+            npc.x = constrained.x;
+            npc.y = constrained.y;
 
-            // Direction
+            // Detect if NPC is stuck
+            if (Math.abs(constrained.x - npc.x) < 0.01 && Math.abs(constrained.y - npc.y) < 0.01 && svgLoaded) {
+                npc.stuckCounter++;
+                if (npc.stuckCounter > 60) {
+                    pickNewTarget(npc);
+                }
+            } else {
+                npc.stuckCounter = 0;
+            }
+
             if (Math.abs(mx) > Math.abs(my)) {
                 npc.direction = mx > 0 ? 3 : 1;
             } else {
                 npc.direction = my > 0 ? 0 : 2;
             }
 
-            // Animation
             npc.animTimer += dt;
             if (npc.animTimer > 200) {
                 npc.animTimer = 0;
@@ -393,7 +698,6 @@
                     ctx.fillStyle = shimmer > 0 ? COLORS.water : COLORS.waterLight;
                     ctx.fillRect(sx, sy, TILE_SIZE + 1, TILE_SIZE + 1);
 
-                    // Water ripple detail
                     ctx.strokeStyle = "rgba(255,255,255,0.15)";
                     ctx.lineWidth = 1;
                     const rippleOffset = Math.sin(Date.now() * 0.003 + c + r) * 5;
@@ -409,8 +713,10 @@
         }
     }
 
-    function drawPaths(cam) {
-        for (const path of paths) {
+    function drawWorldPaths(cam) {
+        if (svgLoaded) return; // Don't draw random paths when SVG is loaded
+
+        for (const path of worldPaths) {
             ctx.strokeStyle = COLORS.pathLight;
             ctx.lineWidth = 20;
             ctx.lineCap = "round";
@@ -431,7 +737,6 @@
             }
             ctx.stroke();
 
-            // Inner path
             ctx.strokeStyle = COLORS.pathDark;
             ctx.lineWidth = 14;
             ctx.beginPath();
@@ -452,6 +757,45 @@
         }
     }
 
+    // Draw SVG-defined paths on the board
+    function drawSvgPaths(cam) {
+        if (!svgLoaded) return;
+
+        for (const p of svgPaths) {
+            const sx = p.x - cam.x;
+            const sy = p.y - cam.y;
+
+            // Cull off-screen paths
+            if (sx + p.w < -10 || sx > W + 10 || sy + p.h < -10 || sy > H + 10) continue;
+
+            // Outer border (darker)
+            ctx.fillStyle = COLORS.pathShadow;
+            ctx.fillRect(sx - 2, sy - 2, p.w + 4, p.h + 4);
+
+            // Main path fill
+            ctx.fillStyle = p.color || COLORS.pathLight;
+            ctx.fillRect(sx, sy, p.w, p.h);
+
+            // Inner highlight (top-left edge)
+            ctx.fillStyle = COLORS.pathHighlight;
+            ctx.fillRect(sx, sy, p.w, 2);
+            ctx.fillRect(sx, sy, 2, p.h);
+
+            // Texture: small pebble dots
+            ctx.fillStyle = "rgba(0,0,0,0.06)";
+            const dotSpacing = 18;
+            for (let dy = 6; dy < p.h - 4; dy += dotSpacing) {
+                for (let dx = 6; dx < p.w - 4; dx += dotSpacing) {
+                    const offsetX = ((dx * 7 + dy * 13) % 11) - 5;
+                    const offsetY = ((dx * 3 + dy * 17) % 9) - 4;
+                    ctx.beginPath();
+                    ctx.arc(sx + dx + offsetX, sy + dy + offsetY, 1.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+    }
+
     function drawFlowers(cam) {
         const time = Date.now() * 0.001;
         for (const f of flowers) {
@@ -466,7 +810,6 @@
             ctx.arc(sx + sway, sy, f.size, 0, Math.PI * 2);
             ctx.fill();
 
-            // Center
             ctx.fillStyle = "#fff5";
             ctx.beginPath();
             ctx.arc(sx + sway, sy, f.size * 0.4, 0, Math.PI * 2);
@@ -485,13 +828,11 @@
             ctx.ellipse(sx, sy, rock.size, rock.size * 0.7, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Highlight
             ctx.fillStyle = "rgba(255,255,255,0.2)";
             ctx.beginPath();
             ctx.ellipse(sx - rock.size * 0.2, sy - rock.size * 0.2, rock.size * 0.4, rock.size * 0.3, -0.3, 0, Math.PI * 2);
             ctx.fill();
 
-            // Shadow
             ctx.fillStyle = "rgba(0,0,0,0.15)";
             ctx.beginPath();
             ctx.ellipse(sx + 2, sy + rock.size * 0.5, rock.size * 0.8, rock.size * 0.25, 0, 0, Math.PI * 2);
@@ -505,32 +846,26 @@
             const sy = h.y - cam.y;
             if (sx < -100 || sx > W + 100 || sy < -100 || sy > H + 100) continue;
 
-            // Shadow
             ctx.fillStyle = "rgba(0,0,0,0.15)";
             ctx.fillRect(sx - h.w / 2 + 5, sy - h.h + 5, h.w, h.h);
 
-            // Wall
             ctx.fillStyle = h.wallColor;
             ctx.fillRect(sx - h.w / 2, sy - h.h, h.w, h.h);
 
-            // Wall outline
             ctx.strokeStyle = "rgba(0,0,0,0.3)";
             ctx.lineWidth = 1;
             ctx.strokeRect(sx - h.w / 2, sy - h.h, h.w, h.h);
 
-            // Door
             ctx.fillStyle = "#5a3a1a";
             const doorW = h.w * 0.2;
             const doorH = h.h * 0.5;
             ctx.fillRect(sx - doorW / 2, sy - doorH, doorW, doorH);
 
-            // Window
             ctx.fillStyle = "#87CEEB";
             const winSize = h.w * 0.15;
             ctx.fillRect(sx - h.w / 2 + 8, sy - h.h + 8, winSize, winSize);
             ctx.fillRect(sx + h.w / 2 - 8 - winSize, sy - h.h + 8, winSize, winSize);
 
-            // Window cross
             ctx.strokeStyle = "#5a3a1a";
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -540,7 +875,6 @@
             ctx.lineTo(sx - h.w / 2 + 8 + winSize, sy - h.h + 8 + winSize / 2);
             ctx.stroke();
 
-            // Roof
             ctx.fillStyle = h.roofColor;
             ctx.beginPath();
             ctx.moveTo(sx - h.w / 2 - 8, sy - h.h);
@@ -555,68 +889,25 @@
         }
     }
 
-    function drawTrees(cam) {
-        const time = Date.now() * 0.001;
-        for (const tree of trees) {
-            const sx = tree.x - cam.x;
-            const sy = tree.y - cam.y;
-            if (sx < -50 || sx > W + 50 || sy < -70 || sy > H + 30) continue;
-
-            const sway = Math.sin(time + tree.sway) * 2;
-
-            // Shadow
-            ctx.fillStyle = "rgba(0,0,0,0.12)";
-            ctx.beginPath();
-            ctx.ellipse(sx + 3, sy + 3, tree.size * 0.6, tree.size * 0.25, 0, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Trunk
-            ctx.fillStyle = COLORS.treeTrunk;
-            ctx.fillRect(sx - 3, sy - tree.size * 1.2, 6, tree.size * 1.2);
-
-            // Leaves (layered circles)
-            ctx.fillStyle = tree.leafColor;
-            ctx.beginPath();
-            ctx.arc(sx + sway, sy - tree.size * 1.3, tree.size * 0.7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(sx - tree.size * 0.3 + sway, sy - tree.size * 1.1, tree.size * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(sx + tree.size * 0.3 + sway, sy - tree.size * 1.1, tree.size * 0.5, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Highlight
-            ctx.fillStyle = "rgba(255,255,255,0.1)";
-            ctx.beginPath();
-            ctx.arc(sx + sway - 3, sy - tree.size * 1.4, tree.size * 0.3, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-
     function drawCharacter(sx, sy, size, color, direction, animFrame, isPlayer) {
         const bobY = animFrame % 2 === 1 ? -2 : 0;
 
-        // Shadow
         ctx.fillStyle = "rgba(0,0,0,0.2)";
         ctx.beginPath();
         ctx.ellipse(sx, sy + size * 0.8, size * 0.6, size * 0.2, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Body
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.ellipse(sx, sy - size * 0.2 + bobY, size * 0.55, size * 0.7, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Body outline
         ctx.strokeStyle = "rgba(0,0,0,0.3)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.ellipse(sx, sy - size * 0.2 + bobY, size * 0.55, size * 0.7, 0, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Head
         const headColor = isPlayer ? "#ffd5a8" : "#ffc999";
         ctx.fillStyle = headColor;
         ctx.beginPath();
@@ -629,12 +920,9 @@
         ctx.arc(sx, sy - size * 0.85 + bobY, size * 0.4, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Eyes
         const eyeOffsetX = size * 0.12;
         const eyeY = sy - size * 0.9 + bobY;
-        if (direction === 2) {
-            // Facing up - no eyes visible
-        } else {
+        if (direction !== 2) {
             ctx.fillStyle = "#333";
             if (direction === 1) {
                 ctx.beginPath();
@@ -654,7 +942,6 @@
             }
         }
 
-        // Player indicator (small arrow above head)
         if (isPlayer) {
             const arrowY = sy - size * 1.5 + bobY + Math.sin(Date.now() * 0.005) * 3;
             ctx.fillStyle = "#ffcc00";
@@ -666,7 +953,6 @@
             ctx.fill();
         }
 
-        // Legs (walking animation)
         if (animFrame % 2 === 1) {
             ctx.strokeStyle = color;
             ctx.lineWidth = 3;
@@ -689,22 +975,11 @@
         drawCharacter(sx, sy, player.size, COLORS.playerBody, player.direction, player.animFrame, true);
     }
 
-    function drawNPCs(cam) {
-        for (const npc of npcs) {
-            const sx = npc.x - cam.x;
-            const sy = npc.y - cam.y;
-            if (sx < -40 || sx > W + 40 || sy < -60 || sy > H + 40) continue;
-            drawCharacter(sx, sy, npc.size, npc.color, npc.direction, npc.animFrame, false);
-        }
-    }
-
-    // ---- Grid Overlay for Board Sections ----
     function drawBoardGrid(cam) {
         ctx.strokeStyle = "rgba(255,255,255,0.08)";
         ctx.lineWidth = 2;
         ctx.setLineDash([10, 10]);
 
-        // Vertical lines (dividing board into 3 columns)
         for (let i = 1; i < BOARD_SCALE; i++) {
             const x = (boardW / BOARD_SCALE) * i - cam.x;
             if (x > 0 && x < W) {
@@ -715,7 +990,6 @@
             }
         }
 
-        // Horizontal lines (dividing board into 3 rows)
         for (let i = 1; i < BOARD_SCALE; i++) {
             const y = (boardH / BOARD_SCALE) * i - cam.y;
             if (y > 0 && y < H) {
@@ -729,7 +1003,6 @@
         ctx.setLineDash([]);
     }
 
-    // ---- Zone Labels ----
     function drawZoneLabels(cam) {
         const zoneW = boardW / BOARD_SCALE;
         const zoneH = boardH / BOARD_SCALE;
@@ -756,7 +1029,6 @@
         }
     }
 
-    // ---- Board Border ----
     function drawBoardBorder(cam) {
         ctx.strokeStyle = "rgba(255,100,100,0.3)";
         ctx.lineWidth = 4;
@@ -766,8 +1038,8 @@
     // ---- Minimap ----
     function drawMinimap(cam) {
         if (!minimapCtx) return;
-        const mW = 120;
-        const mH = 120;
+        const mW = 140;
+        const mH = 140;
 
         minimapCtx.clearRect(0, 0, mW, mH);
 
@@ -775,10 +1047,13 @@
         minimapCtx.fillStyle = "#2a5a2a";
         minimapCtx.fillRect(0, 0, mW, mH);
 
-        // Water tiles (simplified)
+        const scX = mW / boardW;
+        const scY = mH / boardH;
+
+        // Water tiles
         minimapCtx.fillStyle = COLORS.water;
-        const tileScaleX = mW / boardW;
-        const tileScaleY = mH / boardH;
+        const tileScaleX = scX;
+        const tileScaleY = scY;
         for (let r = 0; r < tiles.length; r++) {
             for (let c = 0; tiles[r] && c < tiles[r].length; c++) {
                 if (tiles[r][c] === "water") {
@@ -792,24 +1067,37 @@
             }
         }
 
-        // Houses on minimap
+        // SVG paths on minimap
+        if (svgLoaded) {
+            for (const p of svgPaths) {
+                minimapCtx.fillStyle = "rgba(196, 169, 106, 0.7)";
+                minimapCtx.fillRect(
+                    p.x * scX,
+                    p.y * scY,
+                    Math.max(1, p.w * scX),
+                    Math.max(1, p.h * scY)
+                );
+            }
+        }
+
+        // Houses
         minimapCtx.fillStyle = "#d4a574";
         for (const h of houses) {
-            minimapCtx.fillRect(h.x * tileScaleX - 1, h.y * tileScaleY - 1, 3, 3);
+            minimapCtx.fillRect(h.x * scX - 1, h.y * scY - 1, 3, 3);
         }
 
         // Viewport indicator
-        const vpX = (cam.x / boardW) * mW;
-        const vpY = (cam.y / boardH) * mH;
-        const vpW = (W / boardW) * mW;
-        const vpH = (H / boardH) * mH;
+        const vpX = cam.x * scX;
+        const vpY = cam.y * scY;
+        const vpW = W * scX;
+        const vpH = H * scY;
         minimapCtx.strokeStyle = "rgba(255,255,255,0.6)";
         minimapCtx.lineWidth = 1.5;
         minimapCtx.strokeRect(vpX, vpY, vpW, vpH);
 
         // Player dot
-        const px = (player.x / boardW) * mW;
-        const py = (player.y / boardH) * mH;
+        const px = player.x * scX;
+        const py = player.y * scY;
         minimapCtx.fillStyle = "#ffcc00";
         minimapCtx.beginPath();
         minimapCtx.arc(px, py, 3, 0, Math.PI * 2);
@@ -818,8 +1106,8 @@
         // NPC dots
         minimapCtx.fillStyle = "rgba(255,100,100,0.6)";
         for (const npc of npcs) {
-            const nx = (npc.x / boardW) * mW;
-            const ny = (npc.y / boardH) * mH;
+            const nx = npc.x * scX;
+            const ny = npc.y * scY;
             minimapCtx.beginPath();
             minimapCtx.arc(nx, ny, 1.5, 0, Math.PI * 2);
             minimapCtx.fill();
@@ -840,7 +1128,7 @@
         }
     }
 
-    // ---- Coordinate Display ----
+    // ---- HUD ----
     function drawCoords(cam) {
         const zoneW = boardW / BOARD_SCALE;
         const zoneH = boardH / BOARD_SCALE;
@@ -853,16 +1141,24 @@
         ];
         const zoneName = zoneNames[Math.min(zoneRow, 2)]?.[Math.min(zoneCol, 2)] || "Unknown";
 
+        const boxH = svgLoaded ? 68 : 52;
         ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(12, 12, 220, 52);
+        ctx.fillRect(12, 12, 230, boxH);
+
         ctx.fillStyle = "#fff";
         ctx.font = "bold 14px 'Segoe UI', monospace";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
         ctx.fillText(`Zone: ${zoneName}`, 20, 18);
+
         ctx.font = "12px 'Segoe UI', monospace";
         ctx.fillStyle = "rgba(255,255,255,0.6)";
-        ctx.fillText(`Position: (${Math.round(player.x)}, ${Math.round(player.y)})`, 20, 40);
+        ctx.fillText(`Position: (${Math.round(player.x)}, ${Math.round(player.y)})`, 20, 38);
+
+        if (svgLoaded) {
+            ctx.fillStyle = "rgba(196, 169, 106, 0.8)";
+            ctx.fillText(`SVG Map: ${svgPaths.length} paths`, 20, 56);
+        }
     }
 
     // ---- Main Render ----
@@ -871,9 +1167,9 @@
 
         ctx.clearRect(0, 0, W, H);
 
-        // Draw layers in order
         drawGround(cam);
-        drawPaths(cam);
+        drawWorldPaths(cam);
+        drawSvgPaths(cam);
         drawFlowers(cam);
         drawRocks(cam);
         drawHouses(cam);
@@ -915,17 +1211,14 @@
                 const time = Date.now() * 0.001;
                 const sway = Math.sin(time + tree.sway) * 2;
 
-                // Shadow
                 ctx.fillStyle = "rgba(0,0,0,0.12)";
                 ctx.beginPath();
                 ctx.ellipse(sx + 3, sy + 3, tree.size * 0.6, tree.size * 0.25, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Trunk
                 ctx.fillStyle = COLORS.treeTrunk;
                 ctx.fillRect(sx - 3, sy - tree.size * 1.2, 6, tree.size * 1.2);
 
-                // Leaves
                 ctx.fillStyle = tree.leafColor;
                 ctx.beginPath();
                 ctx.arc(sx + sway, sy - tree.size * 1.3, tree.size * 0.7, 0, Math.PI * 2);
@@ -937,7 +1230,6 @@
                 ctx.arc(sx + tree.size * 0.3 + sway, sy - tree.size * 1.1, tree.size * 0.5, 0, Math.PI * 2);
                 ctx.fill();
 
-                // Highlight
                 ctx.fillStyle = "rgba(255,255,255,0.1)";
                 ctx.beginPath();
                 ctx.arc(sx + sway - 3, sy - tree.size * 1.4, tree.size * 0.3, 0, Math.PI * 2);

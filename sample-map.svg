@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600">
+  <!-- 
+    Sample board game path map.
+    Rectangles define walkable corridors.
+    The viewBox (900x600) is scaled to fit the full board (3x3 viewports).
+  -->
+
+  <!-- === Main Horizontal Corridors === -->
+  <rect x="50" y="85" width="800" height="30" fill="#c4a96a" />
+  <rect x="50" y="285" width="800" height="30" fill="#c4a96a" />
+  <rect x="50" y="485" width="800" height="30" fill="#c4a96a" />
+
+  <!-- === Main Vertical Corridors === -->
+  <rect x="80" y="55" width="30" height="490" fill="#c4a96a" />
+  <rect x="435" y="55" width="30" height="490" fill="#c4a96a" />
+  <rect x="790" y="55" width="30" height="490" fill="#c4a96a" />
+
+  <!-- === Secondary Horizontal Branches === -->
+  <rect x="80" y="185" width="385" height="24" fill="#b09858" />
+  <rect x="435" y="385" width="385" height="24" fill="#b09858" />
+  <rect x="200" y="185" width="24" height="124" fill="#b09858" />
+  <rect x="650" y="285" width="24" height="124" fill="#b09858" />
+
+  <!-- === Central Hub (larger walkable area) === -->
+  <rect x="395" y="250" width="110" height="100" fill="#d4b87a" />
+
+  <!-- === Diagonal-ish connector (series of small rects) === -->
+  <rect x="260" y="100" width="60" height="24" fill="#b09858" />
+  <rect x="296" y="100" width="24" height="60" fill="#b09858" />
+  <rect x="296" y="136" width="60" height="24" fill="#b09858" />
+
+  <rect x="580" y="430" width="60" height="24" fill="#b09858" />
+  <rect x="616" y="430" width="24" height="60" fill="#b09858" />
+  <rect x="580" y="466" width="60" height="24" fill="#b09858" />
+
+  <!-- === Small plazas / rooms === -->
+  <rect x="60" y="65" width="70" height="70" fill="#d4b87a" />
+  <rect x="770" y="65" width="70" height="70" fill="#d4b87a" />
+  <rect x="60" y="465" width="70" height="70" fill="#d4b87a" />
+  <rect x="770" y="465" width="70" height="70" fill="#d4b87a" />
+</svg>
