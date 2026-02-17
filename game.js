@@ -1,5 +1,5 @@
 // ============================================================
-// HF Board Game - Main Game Engine
+// Hey Feelings - Worlds of Emotions - Game Engine
 // ============================================================
 
 (function () {
@@ -16,7 +16,28 @@
     const ROCK_COUNT = 40;
     const HOUSE_COUNT = 12;
     const FLOWER_COUNT = 120;
+    const CRYSTAL_COUNT = 60;
     const PATH_POINT_MARGIN = 2;
+
+    // ---- Emotion Worlds (3x3 grid) ----
+    // Each world has: name, emoji, base grass colors, accent color, label color
+    const EMOTION_WORLDS = [
+        [
+            { name: "World of Fear",    emoji: "\u{1F630}", grass: ["#3d5a4a", "#345249"], accent: "#6B5B95", label: "rgba(107,91,149,0.15)" },
+            { name: "World of Anxiety", emoji: "\u{1F616}", grass: ["#4a6a5a", "#3f6050"], accent: "#5DADE2", label: "rgba(93,173,226,0.12)" },
+            { name: "World of Anger",   emoji: "\u{1F621}", grass: ["#5a4a3a", "#504238"], accent: "#E74C3C", label: "rgba(231,76,60,0.12)" },
+        ],
+        [
+            { name: "World of Empathy", emoji: "\u{1F49C}", grass: ["#4a6b4a", "#3f6040"], accent: "#E8A0BF", label: "rgba(232,160,191,0.12)" },
+            { name: "Filly & Dilly's Home", emoji: "\u{1F3E0}", grass: ["#5a8a4f", "#4e7e44"], accent: "#F4D03F", label: "rgba(244,208,63,0.12)" },
+            { name: "World of Boredom", emoji: "\u{1F634}", grass: ["#5a6a3a", "#4f5f34"], accent: "#A8B820", label: "rgba(168,184,32,0.12)" },
+        ],
+        [
+            { name: "World of Love",    emoji: "\u{2764}\u{FE0F}",  grass: ["#5a4a5a", "#4f4050"], accent: "#FF6B8A", label: "rgba(255,107,138,0.12)" },
+            { name: "World of Joy",     emoji: "\u{1F60A}", grass: ["#5a7a3a", "#4f6f34"], accent: "#F39C12", label: "rgba(243,156,18,0.12)" },
+            { name: "World of Courage", emoji: "\u{1F4AA}", grass: ["#4a5a3a", "#404f34"], accent: "#E67E22", label: "rgba(230,126,34,0.12)" },
+        ],
+    ];
 
     // ---- Canvas Setup ----
     const canvas = document.getElementById("gameCanvas");
@@ -57,25 +78,27 @@
         return (seed - 1) / 2147483646;
     }
 
-    // ---- Color Palette ----
+    // ---- Color Palette (Hey Feelings Brand) ----
     const COLORS = {
-        grassLight: "#4a7c3f",
-        grassDark: "#3d6b34",
+        grassLight: "#5a8a4f",
+        grassDark: "#4e7e44",
         pathLight: "#c4a96a",
         pathDark: "#b09858",
         pathHighlight: "#d4c48a",
         pathShadow: "#9a8848",
-        water: "#3a7bd5",
-        waterLight: "#5a9bf5",
-        treeTrunk: "#6b4226",
-        treeLeaves: ["#2d7a2d", "#35912e", "#28732a", "#3da83a"],
-        rock: ["#8a8a8a", "#7a7a7a", "#9a9a9a"],
-        houseWall: ["#d4a574", "#c9956a", "#deb887", "#e8c9a0"],
-        houseRoof: ["#8b3a3a", "#6b2a2a", "#9b4a4a", "#7a3535"],
-        flowerColors: ["#ff6b8a", "#ffaa00", "#ff55aa", "#aa88ff", "#55ccff", "#ff4444", "#ffdd44"],
-        playerBody: "#3498db",
-        playerOutline: "#2980b9",
-        npcColors: ["#e74c3c", "#e67e22", "#f1c40f", "#1abc9c", "#9b59b6", "#e84393", "#00b894", "#fd79a8"],
+        water: "#5DADE2",
+        waterLight: "#85C1E9",
+        treeTrunk: "#7a5230",
+        treeLeaves: ["#4CAF50", "#66BB6A", "#43A047", "#81C784"],
+        rock: ["#9E9E9E", "#BDBDBD", "#8D8D8D"],
+        houseWall: ["#FFCC80", "#FFE0B2", "#FFAB91", "#F8BBD0"],
+        houseRoof: ["#7B1FA2", "#C62828", "#00838F", "#E65100"],
+        flowerColors: ["#FF6B8A", "#F4D03F", "#E8A0BF", "#BB86FC", "#5DADE2", "#FF8A65", "#81C784"],
+        crystalColors: ["#E040FB", "#7C4DFF", "#00E5FF", "#FF4081", "#FFAB40", "#69F0AE"],
+        playerBody: "#7B1FA2",
+        playerOutline: "#6A1B9A",
+        playerSkin: "#FFCC80",
+        npcColors: ["#E74C3C", "#E67E22", "#F1C40F", "#1ABC9C", "#9B59B6", "#E84393", "#00B894", "#FF6B8A", "#5DADE2", "#A8B820"],
     };
 
     // ============================================================
@@ -310,12 +333,26 @@
         }
     }
 
+    // Helper: get emotion world data for a board position
+    function getWorldAt(px, py) {
+        const zoneW = boardW / BOARD_SCALE;
+        const zoneH = boardH / BOARD_SCALE;
+        const col = Math.min(Math.floor(px / zoneW), BOARD_SCALE - 1);
+        const row = Math.min(Math.floor(py / zoneH), BOARD_SCALE - 1);
+        return EMOTION_WORLDS[Math.max(0, row)][Math.max(0, col)];
+    }
+
+    function getWorldByGrid(row, col) {
+        return EMOTION_WORLDS[row][col];
+    }
+
     // ---- World Generation ----
     let tiles = [];
     let trees = [];
     let rocks = [];
     let houses = [];
     let flowers = [];
+    let crystals = [];
     let worldPaths = [];
 
     function generateWorld() {
@@ -328,7 +365,7 @@
             tiles[r] = [];
             for (let c = 0; c < cols; c++) {
                 const noise = seededRandom();
-                tiles[r][c] = noise < 0.06 ? "water" : "grass";
+                tiles[r][c] = noise < 0.04 ? "water" : "grass";
             }
         }
 
@@ -390,6 +427,19 @@
                 color: COLORS.flowerColors[Math.floor(seededRandom() * COLORS.flowerColors.length)],
                 size: 2 + seededRandom() * 4,
                 phase: seededRandom() * Math.PI * 2,
+            });
+        }
+
+        // Generate emotion crystals (diamond shapes)
+        crystals = [];
+        for (let i = 0; i < CRYSTAL_COUNT; i++) {
+            crystals.push({
+                x: seededRandom() * boardW,
+                y: seededRandom() * boardH,
+                color: COLORS.crystalColors[Math.floor(seededRandom() * COLORS.crystalColors.length)],
+                size: 6 + seededRandom() * 6,
+                phase: seededRandom() * Math.PI * 2,
+                sparkle: seededRandom() * Math.PI * 2,
             });
         }
     }
@@ -685,6 +735,8 @@
         const startRow = Math.floor(cam.y / TILE_SIZE);
         const endCol = Math.ceil((cam.x + W) / TILE_SIZE);
         const endRow = Math.ceil((cam.y + H) / TILE_SIZE);
+        const zoneW = boardW / BOARD_SCALE;
+        const zoneH = boardH / BOARD_SCALE;
 
         for (let r = startRow; r <= endRow; r++) {
             for (let c = startCol; c <= endCol; c++) {
@@ -698,7 +750,7 @@
                     ctx.fillStyle = shimmer > 0 ? COLORS.water : COLORS.waterLight;
                     ctx.fillRect(sx, sy, TILE_SIZE + 1, TILE_SIZE + 1);
 
-                    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+                    ctx.strokeStyle = "rgba(255,255,255,0.2)";
                     ctx.lineWidth = 1;
                     const rippleOffset = Math.sin(Date.now() * 0.003 + c + r) * 5;
                     ctx.beginPath();
@@ -706,7 +758,14 @@
                     ctx.quadraticCurveTo(sx + TILE_SIZE / 2, sy + TILE_SIZE / 2 + rippleOffset - 4, sx + TILE_SIZE - 5, sy + TILE_SIZE / 2 + rippleOffset);
                     ctx.stroke();
                 } else {
-                    ctx.fillStyle = (c + r) % 2 === 0 ? COLORS.grassLight : COLORS.grassDark;
+                    // Zone-tinted grass
+                    const worldX = c * TILE_SIZE;
+                    const worldY = r * TILE_SIZE;
+                    const zCol = Math.min(Math.floor(worldX / zoneW), BOARD_SCALE - 1);
+                    const zRow = Math.min(Math.floor(worldY / zoneH), BOARD_SCALE - 1);
+                    const world = EMOTION_WORLDS[Math.max(0, zRow)]?.[Math.max(0, zCol)];
+                    const grassPair = world ? world.grass : [COLORS.grassLight, COLORS.grassDark];
+                    ctx.fillStyle = (c + r) % 2 === 0 ? grassPair[0] : grassPair[1];
                     ctx.fillRect(sx, sy, TILE_SIZE + 1, TILE_SIZE + 1);
                 }
             }
@@ -805,15 +864,70 @@
 
             const sway = Math.sin(time * 2 + f.phase) * 1.5;
 
+            // Petals (4 small circles around center)
             ctx.fillStyle = f.color;
+            const ps = f.size * 0.7;
+            for (let a = 0; a < 4; a++) {
+                const angle = (a / 4) * Math.PI * 2 + time * 0.5 + f.phase;
+                ctx.beginPath();
+                ctx.arc(sx + sway + Math.cos(angle) * ps, sy + Math.sin(angle) * ps, f.size * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Center
+            ctx.fillStyle = "#FFF9C4";
             ctx.beginPath();
-            ctx.arc(sx + sway, sy, f.size, 0, Math.PI * 2);
+            ctx.arc(sx + sway, sy, f.size * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // Draw emotion crystals (diamond shapes)
+    function drawCrystals(cam) {
+        const time = Date.now() * 0.001;
+        for (const cr of crystals) {
+            const sx = cr.x - cam.x;
+            const sy = cr.y - cam.y;
+            if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
+
+            const hover = Math.sin(time * 2.5 + cr.phase) * 3;
+            const glow = 0.4 + Math.sin(time * 3 + cr.sparkle) * 0.2;
+            const s = cr.size;
+
+            // Glow
+            ctx.fillStyle = cr.color + Math.floor(glow * 40).toString(16).padStart(2, "0");
+            ctx.beginPath();
+            ctx.arc(sx, sy + hover, s * 1.5, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = "#fff5";
+            // Diamond shape
+            ctx.fillStyle = cr.color;
             ctx.beginPath();
-            ctx.arc(sx + sway, sy, f.size * 0.4, 0, Math.PI * 2);
+            ctx.moveTo(sx, sy - s + hover);
+            ctx.lineTo(sx + s * 0.6, sy + hover);
+            ctx.lineTo(sx, sy + s * 0.5 + hover);
+            ctx.lineTo(sx - s * 0.6, sy + hover);
+            ctx.closePath();
             ctx.fill();
+
+            // Highlight facet
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - s + hover);
+            ctx.lineTo(sx + s * 0.3, sy - s * 0.2 + hover);
+            ctx.lineTo(sx, sy + hover);
+            ctx.lineTo(sx - s * 0.15, sy - s * 0.3 + hover);
+            ctx.closePath();
+            ctx.fill();
+
+            // Sparkle
+            const sparkleAlpha = Math.max(0, Math.sin(time * 5 + cr.sparkle));
+            if (sparkleAlpha > 0.5) {
+                ctx.fillStyle = `rgba(255,255,255,${sparkleAlpha * 0.8})`;
+                ctx.beginPath();
+                ctx.arc(sx + s * 0.2, sy - s * 0.5 + hover, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
         }
     }
 
@@ -890,82 +1004,160 @@
     }
 
     function drawCharacter(sx, sy, size, color, direction, animFrame, isPlayer) {
-        const bobY = animFrame % 2 === 1 ? -2 : 0;
+        const bobY = animFrame % 2 === 1 ? -2.5 : 0;
+        const squish = animFrame % 2 === 1 ? 1.04 : 1.0;
 
-        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        // Shadow (soft ellipse)
+        ctx.fillStyle = "rgba(0,0,0,0.15)";
         ctx.beginPath();
-        ctx.ellipse(sx, sy + size * 0.8, size * 0.6, size * 0.2, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy + size * 0.85, size * 0.7, size * 0.2, 0, 0, Math.PI * 2);
         ctx.fill();
 
+        // Chubby round body (Filly/Dilly inspired)
         ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.ellipse(sx, sy - size * 0.2 + bobY, size * 0.55, size * 0.7, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy - size * 0.1 + bobY, size * 0.65 * squish, size * 0.75 / squish, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = "rgba(0,0,0,0.3)";
+        // Body shine
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.beginPath();
+        ctx.ellipse(sx - size * 0.15, sy - size * 0.35 + bobY, size * 0.25, size * 0.35, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Body outline
+        ctx.strokeStyle = "rgba(0,0,0,0.2)";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.ellipse(sx, sy - size * 0.2 + bobY, size * 0.55, size * 0.7, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy - size * 0.1 + bobY, size * 0.65 * squish, size * 0.75 / squish, 0, 0, Math.PI * 2);
         ctx.stroke();
 
-        const headColor = isPlayer ? "#ffd5a8" : "#ffc999";
-        ctx.fillStyle = headColor;
+        // Big round head
+        const headR = size * 0.52;
+        const headY = sy - size * 0.85 + bobY;
+        const skinColor = isPlayer ? COLORS.playerSkin : "#FFE0B2";
+        ctx.fillStyle = skinColor;
         ctx.beginPath();
-        ctx.arc(sx, sy - size * 0.85 + bobY, size * 0.4, 0, Math.PI * 2);
+        ctx.arc(sx, headY, headR, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.strokeStyle = "rgba(0,0,0,0.2)";
+        // Head outline
+        ctx.strokeStyle = "rgba(0,0,0,0.15)";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(sx, sy - size * 0.85 + bobY, size * 0.4, 0, Math.PI * 2);
+        ctx.arc(sx, headY, headR, 0, Math.PI * 2);
         ctx.stroke();
 
-        const eyeOffsetX = size * 0.12;
-        const eyeY = sy - size * 0.9 + bobY;
+        // Rosy cheeks
+        ctx.fillStyle = "rgba(255,150,150,0.25)";
+        ctx.beginPath();
+        ctx.arc(sx - headR * 0.55, headY + headR * 0.2, headR * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(sx + headR * 0.55, headY + headR * 0.2, headR * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Eyes (big, round, cute)
+        const eyeSpread = headR * 0.32;
+        const eyeY = headY - headR * 0.05;
+        const eyeR = headR * 0.18;
         if (direction !== 2) {
+            const eyeShiftX = direction === 1 ? -2 : direction === 3 ? 2 : 0;
+
+            // Eye whites
+            ctx.fillStyle = "#fff";
+            ctx.beginPath();
+            ctx.arc(sx - eyeSpread + eyeShiftX, eyeY, eyeR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(sx + eyeSpread + eyeShiftX, eyeY, eyeR, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Pupils
             ctx.fillStyle = "#333";
-            if (direction === 1) {
+            const pupilShift = direction === 1 ? -1.5 : direction === 3 ? 1.5 : 0;
+            ctx.beginPath();
+            ctx.arc(sx - eyeSpread + eyeShiftX + pupilShift, eyeY + 0.5, eyeR * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(sx + eyeSpread + eyeShiftX + pupilShift, eyeY + 0.5, eyeR * 0.55, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eye highlight
+            ctx.fillStyle = "#fff";
+            ctx.beginPath();
+            ctx.arc(sx - eyeSpread + eyeShiftX + pupilShift + 1, eyeY - 1, eyeR * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(sx + eyeSpread + eyeShiftX + pupilShift + 1, eyeY - 1, eyeR * 0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cute smile (only when facing front)
+            if (direction === 0) {
+                ctx.strokeStyle = "#8B6914";
+                ctx.lineWidth = 1.2;
                 ctx.beginPath();
-                ctx.arc(sx - eyeOffsetX - 2, eyeY, 2, 0, Math.PI * 2);
-                ctx.fill();
-            } else if (direction === 3) {
-                ctx.beginPath();
-                ctx.arc(sx + eyeOffsetX + 2, eyeY, 2, 0, Math.PI * 2);
-                ctx.fill();
-            } else {
-                ctx.beginPath();
-                ctx.arc(sx - eyeOffsetX, eyeY, 2, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(sx + eyeOffsetX, eyeY, 2, 0, Math.PI * 2);
-                ctx.fill();
+                ctx.arc(sx, headY + headR * 0.2, headR * 0.2, 0.1, Math.PI - 0.1);
+                ctx.stroke();
             }
+        } else {
+            // Back of head - small hair detail
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(sx, headY - headR * 0.3, headR * 0.3, 0, Math.PI * 2);
+            ctx.fill();
         }
 
+        // Player indicator (floating crystal above head)
         if (isPlayer) {
-            const arrowY = sy - size * 1.5 + bobY + Math.sin(Date.now() * 0.005) * 3;
-            ctx.fillStyle = "#ffcc00";
+            const floatY = sy - size * 1.7 + bobY + Math.sin(Date.now() * 0.004) * 4;
+            const cSize = 7;
+
+            // Crystal glow
+            ctx.fillStyle = "rgba(244,208,63,0.3)";
             ctx.beginPath();
-            ctx.moveTo(sx, arrowY + 6);
-            ctx.lineTo(sx - 5, arrowY);
-            ctx.lineTo(sx + 5, arrowY);
+            ctx.arc(sx, floatY, cSize * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Crystal diamond
+            ctx.fillStyle = "#F4D03F";
+            ctx.beginPath();
+            ctx.moveTo(sx, floatY - cSize);
+            ctx.lineTo(sx + cSize * 0.5, floatY);
+            ctx.lineTo(sx, floatY + cSize * 0.4);
+            ctx.lineTo(sx - cSize * 0.5, floatY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Crystal highlight
+            ctx.fillStyle = "rgba(255,255,255,0.6)";
+            ctx.beginPath();
+            ctx.moveTo(sx, floatY - cSize);
+            ctx.lineTo(sx + cSize * 0.25, floatY - cSize * 0.2);
+            ctx.lineTo(sx, floatY);
+            ctx.lineTo(sx - cSize * 0.1, floatY - cSize * 0.4);
             ctx.closePath();
             ctx.fill();
         }
 
+        // Little feet (walking animation)
         if (animFrame % 2 === 1) {
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
-            ctx.lineCap = "round";
-            const legSpread = animFrame === 1 ? 4 : -4;
+            ctx.fillStyle = color;
+            const legSpread = animFrame === 1 ? 5 : -5;
             ctx.beginPath();
-            ctx.moveTo(sx - 3, sy + size * 0.3 + bobY);
-            ctx.lineTo(sx - 3 + legSpread, sy + size * 0.7);
-            ctx.stroke();
+            ctx.ellipse(sx - 4 + legSpread, sy + size * 0.65, 4, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
             ctx.beginPath();
-            ctx.moveTo(sx + 3, sy + size * 0.3 + bobY);
-            ctx.lineTo(sx + 3 - legSpread, sy + size * 0.7);
-            ctx.stroke();
+            ctx.ellipse(sx + 4 - legSpread, sy + size * 0.65, 4, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.ellipse(sx - 4, sy + size * 0.7, 4, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(sx + 4, sy + size * 0.7, 4, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
         }
     }
 
@@ -1006,13 +1198,7 @@
     function drawZoneLabels(cam) {
         const zoneW = boardW / BOARD_SCALE;
         const zoneH = boardH / BOARD_SCALE;
-        const zoneNames = [
-            ["Enchanted Forest", "Northern Plains", "Mountain Pass"],
-            ["Western Marsh", "Central Village", "Eastern Desert"],
-            ["Southern Beach", "Mystic Lake", "Dark Caves"],
-        ];
 
-        ctx.font = "bold 28px 'Segoe UI', sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
@@ -1021,16 +1207,25 @@
                 const cx = zoneW * c + zoneW / 2 - cam.x;
                 const cy = zoneH * r + zoneH / 2 - cam.y;
 
-                if (cx > -200 && cx < W + 200 && cy > -200 && cy < H + 200) {
-                    ctx.fillStyle = "rgba(255,255,255,0.08)";
-                    ctx.fillText(zoneNames[r][c], cx, cy);
+                if (cx > -300 && cx < W + 300 && cy > -200 && cy < H + 200) {
+                    const world = EMOTION_WORLDS[r][c];
+
+                    // Emoji above
+                    ctx.font = "40px sans-serif";
+                    ctx.fillStyle = world.label;
+                    ctx.fillText(world.emoji, cx, cy - 20);
+
+                    // World name
+                    ctx.font = "bold 26px 'Nunito', 'Segoe UI', sans-serif";
+                    ctx.fillStyle = world.label;
+                    ctx.fillText(world.name, cx, cy + 20);
                 }
             }
         }
     }
 
     function drawBoardBorder(cam) {
-        ctx.strokeStyle = "rgba(255,100,100,0.3)";
+        ctx.strokeStyle = "rgba(123,31,162,0.3)";
         ctx.lineWidth = 4;
         ctx.strokeRect(-cam.x, -cam.y, boardW, boardH);
     }
@@ -1043,12 +1238,19 @@
 
         minimapCtx.clearRect(0, 0, mW, mH);
 
-        // Background
-        minimapCtx.fillStyle = "#2a5a2a";
-        minimapCtx.fillRect(0, 0, mW, mH);
-
         const scX = mW / boardW;
         const scY = mH / boardH;
+        const zoneW = mW / BOARD_SCALE;
+        const zoneH = mH / BOARD_SCALE;
+
+        // Colored zone backgrounds on minimap
+        for (let r = 0; r < BOARD_SCALE; r++) {
+            for (let c = 0; c < BOARD_SCALE; c++) {
+                const world = EMOTION_WORLDS[r][c];
+                minimapCtx.fillStyle = world.grass[0];
+                minimapCtx.fillRect(zoneW * c, zoneH * r, zoneW + 1, zoneH + 1);
+            }
+        }
 
         // Water tiles
         minimapCtx.fillStyle = COLORS.water;
@@ -1130,34 +1332,46 @@
 
     // ---- HUD ----
     function drawCoords(cam) {
-        const zoneW = boardW / BOARD_SCALE;
-        const zoneH = boardH / BOARD_SCALE;
-        const zoneCol = Math.floor(player.x / zoneW);
-        const zoneRow = Math.floor(player.y / zoneH);
-        const zoneNames = [
-            ["Enchanted Forest", "Northern Plains", "Mountain Pass"],
-            ["Western Marsh", "Central Village", "Eastern Desert"],
-            ["Southern Beach", "Mystic Lake", "Dark Caves"],
-        ];
-        const zoneName = zoneNames[Math.min(zoneRow, 2)]?.[Math.min(zoneCol, 2)] || "Unknown";
+        const world = getWorldAt(player.x, player.y);
+        const worldName = world ? world.name : "Unknown";
+        const worldEmoji = world ? world.emoji : "";
+        const worldAccent = world ? world.accent : "#fff";
 
-        const boxH = svgLoaded ? 68 : 52;
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(12, 12, 230, boxH);
+        const boxH = svgLoaded ? 82 : 66;
+        const boxW = 260;
 
+        // HUD background with rounded feel
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.beginPath();
+        ctx.roundRect(12, 12, boxW, boxH, 10);
+        ctx.fill();
+
+        // Accent bar on left
+        ctx.fillStyle = worldAccent;
+        ctx.beginPath();
+        ctx.roundRect(12, 12, 4, boxH, [10, 0, 0, 10]);
+        ctx.fill();
+
+        // Title
         ctx.fillStyle = "#fff";
-        ctx.font = "bold 14px 'Segoe UI', monospace";
+        ctx.font = "bold 13px 'Nunito', 'Segoe UI', sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText(`Zone: ${zoneName}`, 20, 18);
+        ctx.fillText("Hey Feelings", 24, 16);
 
-        ctx.font = "12px 'Segoe UI', monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.6)";
-        ctx.fillText(`Position: (${Math.round(player.x)}, ${Math.round(player.y)})`, 20, 38);
+        // World name with emoji
+        ctx.fillStyle = worldAccent;
+        ctx.font = "bold 14px 'Nunito', 'Segoe UI', sans-serif";
+        ctx.fillText(`${worldEmoji} ${worldName}`, 24, 34);
+
+        // Position
+        ctx.font = "11px 'Segoe UI', monospace";
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillText(`(${Math.round(player.x)}, ${Math.round(player.y)})`, 24, 54);
 
         if (svgLoaded) {
-            ctx.fillStyle = "rgba(196, 169, 106, 0.8)";
-            ctx.fillText(`SVG Map: ${svgPaths.length} paths`, 20, 56);
+            ctx.fillStyle = "rgba(196, 169, 106, 0.7)";
+            ctx.fillText(`Map: ${svgPaths.length} paths`, 140, 54);
         }
     }
 
@@ -1171,6 +1385,7 @@
         drawWorldPaths(cam);
         drawSvgPaths(cam);
         drawFlowers(cam);
+        drawCrystals(cam);
         drawRocks(cam);
         drawHouses(cam);
         drawBoardGrid(cam);
@@ -1267,8 +1482,8 @@
             generateWorld();
         });
         requestAnimationFrame(gameLoop);
-        console.log(`Board size: ${boardW}x${boardH} (${BOARD_SCALE}x${BOARD_SCALE} viewports)`);
-        console.log(`Player starts at: (${player.x}, ${player.y})`);
+        console.log(`%cHey Feelings%c - Worlds of Emotions`, "color:#7B1FA2;font-weight:bold;font-size:16px", "color:#F4D03F;font-size:14px");
+        console.log(`Board: ${boardW}x${boardH} | Player: (${player.x}, ${player.y})`);
     }
 
     init();
