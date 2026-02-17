@@ -1,0 +1,12 @@
+{
+  "name": "hf-game",
+  "version": "1.0.0",
+  "description": "Hey Feelings - Worlds of Emotions - Interactive co-browsing board game",
+  "scripts": {
+    "start": "npx http-server -p 8080 -c-1",
+    "signaling": "npx y-webrtc-signaling",
+    "dev": "npx concurrently \"npx http-server -p 8080 -c-1\" \"npx y-webrtc-signaling\""
+  },
+  "keywords": ["hey-feelings", "board-game", "co-browsing", "yjs", "webrtc"],
+  "license": "MIT"
+}

@@ -44,13 +44,26 @@ export function createCollab(game) {
 
     // ---- Initialize Yjs ----
     const ydoc = new Y.Doc();
+    // Build signaling server list
+    const signalingServers = [];
+
+    // Local signaling server (start with: npx y-webrtc-signaling)
+    if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+        signalingServers.push("ws://localhost:4444");
+    }
+
+    // Public fallback
+    signalingServers.push("wss://signaling.yjs.dev");
+
     const provider = new WebrtcProvider(`hf-game-${roomId}`, ydoc, {
-        signaling: [
-            "wss://signaling.yjs.dev",
-            "wss://y-webrtc-signaling-eu.herokuapp.com",
-            "wss://y-webrtc-signaling-us.herokuapp.com",
-        ],
+        signaling: signalingServers,
+        // CRITICAL: allow BroadcastChannel sync even when signaling servers are down.
+        // This enables same-browser tab-to-tab sync without any server.
+        filterBcConns: false,
     });
+
+    // Suppress noisy WebSocket reconnection errors in console
+    provider.on("status", () => {});
     const awareness = provider.awareness;
 
     const yPlayer = ydoc.getMap("player");
