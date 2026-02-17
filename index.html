@@ -5,10 +5,49 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Hey Feelings - Worlds of Emotions</title>
     <link rel="stylesheet" href="styles.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "yjs": "https://esm.sh/yjs@13.6.20",
+            "y-webrtc": "https://esm.sh/y-webrtc@10.3.0?deps=yjs@13.6.20"
+        }
+    }
+    </script>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
 
+    <!-- Co-browsing panel -->
+    <div id="collab-panel">
+        <div class="collab-row">
+            <div class="collab-room">
+                <span class="collab-label">Room</span>
+                <span id="room-id" class="room-id">---</span>
+            </div>
+            <div id="user-list" class="user-list"></div>
+            <span id="user-count" class="user-count">1</span>
+        </div>
+        <div class="collab-row collab-actions">
+            <button id="btn-share" class="collab-btn" title="Copy room link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+                <span>Share Link</span>
+            </button>
+            <button id="mode-toggle" class="collab-btn" title="Toggle co-browsing mode">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span id="mode-label">Shared Pawn</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- SVG upload area -->
     <div id="svg-upload-area">
         <button id="btn-load-svg" title="Load SVG map file">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -43,6 +82,10 @@
         <span>WASD / Arrow Keys / Click to move</span>
     </div>
     <div id="minimap"></div>
+
+    <!-- Game engine (sets window.HFGame) -->
     <script src="game.js"></script>
+    <!-- Co-browsing orchestrator (ES module) -->
+    <script type="module" src="main.js"></script>
 </body>
 </html>

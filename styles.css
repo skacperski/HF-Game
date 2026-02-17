@@ -19,6 +19,107 @@ html, body {
     cursor: crosshair;
 }
 
+/* --- Co-browsing Panel --- */
+#collab-panel {
+    position: fixed;
+    top: 80px;
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 20;
+    pointer-events: auto;
+}
+
+.collab-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.collab-room {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: rgba(0, 0, 0, 0.55);
+    padding: 5px 10px;
+    border-radius: 8px;
+    backdrop-filter: blur(6px);
+}
+
+.collab-label {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.room-id {
+    font-size: 12px;
+    font-family: 'Segoe UI', monospace;
+    color: #81C784;
+    font-weight: bold;
+}
+
+.user-list {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+}
+
+.user-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    transition: transform 0.2s ease;
+}
+
+.user-dot.local {
+    border-color: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 0 4px rgba(255, 255, 255, 0.3);
+}
+
+.user-count {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: bold;
+    min-width: 14px;
+    text-align: center;
+}
+
+.collab-actions {
+    gap: 5px;
+}
+
+.collab-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.5);
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+    font-family: inherit;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.collab-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+}
+
+.collab-btn.copied {
+    border-color: rgba(129, 199, 132, 0.5);
+    color: #81C784;
+}
+
 /* --- SVG Upload Controls --- */
 #svg-upload-area {
     position: fixed;

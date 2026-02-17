@@ -108,9 +108,11 @@
     let svgPathsRaw = [];       // Original SVG coords: [{x, y, w, h, color}]
     let svgViewBox = null;      // {w, h} of the SVG viewBox
     let svgLoaded = false;
+    let lastSvgText = null;
 
     // Parse an SVG string and extract walkable rectangles
     function parseSvg(svgText) {
+        lastSvgText = svgText;
         const parser = new DOMParser();
         const doc = parser.parseFromString(svgText, "image/svg+xml");
         const svgEl = doc.querySelector("svg");
@@ -1375,6 +1377,9 @@
         }
     }
 
+    // ---- Render Callbacks (used by co-browsing layer) ----
+    const renderCallbacks = [];
+
     // ---- Main Render ----
     function render() {
         const cam = getCameraOffset();
@@ -1452,6 +1457,11 @@
             }
         }
 
+        // Co-browsing layer: remote cursors, pawns, etc.
+        for (const cb of renderCallbacks) {
+            cb(ctx, cam);
+        }
+
         drawBoardBorder(cam);
         drawCoords(cam);
         drawMinimap(cam);
@@ -1486,5 +1496,22 @@
         console.log(`Board: ${boardW}x${boardH} | Player: (${player.x}, ${player.y})`);
     }
 
-    init();
+    // ---- Public API for co-browsing integration ----
+    window.HFGame = {
+        init,
+        player,
+        getCamera: getCameraOffset,
+        getBoardSize: () => ({ w: boardW, h: boardH }),
+        getViewport: () => ({ w: W, h: H }),
+        drawCharacter,
+        addRenderCallback: (fn) => renderCallbacks.push(fn),
+        canvas,
+        ctx,
+        COLORS,
+        EMOTION_WORLDS,
+        getWorldAt,
+        parseSvgText: parseSvg,
+        getLastSvgText: () => lastSvgText,
+        constrainToPath,
+    };
 })();
