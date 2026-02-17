@@ -1,11 +1,17 @@
 {
   "name": "hf-game",
   "version": "1.0.0",
+  "type": "module",
   "description": "Hey Feelings - Worlds of Emotions - Interactive co-browsing board game",
   "scripts": {
     "start": "npx http-server -p 8080 -c-1",
-    "signaling": "npx y-webrtc-signaling",
-    "dev": "npx concurrently \"npx http-server -p 8080 -c-1\" \"npx y-webrtc-signaling\""
+    "signaling": "node signaling-server.js",
+    "dev": "npx concurrently \"npx http-server -p 8080 -c-1\" \"node signaling-server.js\"",
+    "ssl": "npx local-ssl-proxy --source 8443 --target 8080",
+    "test-mobile": "npx concurrently \"npx http-server -p 8080 -c-1\" \"node signaling-server.js\" \"npx local-ssl-proxy --source 8443 --target 8080\""
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
   },
   "keywords": ["hey-feelings", "board-game", "co-browsing", "yjs", "webrtc"],
   "license": "MIT"
